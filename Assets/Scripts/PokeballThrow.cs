@@ -29,6 +29,7 @@ public class PokeballThrow : MonoBehaviour
     public Button throwButton;
     public Button retryButton;
     public Button homeButton;
+    public Button musicButton;
 
     [Header("文字與力道條")]
     public TMP_Text attemptsText;
@@ -50,11 +51,27 @@ public class PokeballThrow : MonoBehaviour
     public float fallDuration = 0.5f;
     public float shakeDuration = 0.3f;
 
+    [Header("音樂播放器")]
+    public AudioSource bgmSource;
+    public AudioSource sfxSource;
+
+    [Header("背景音樂與音效")]
+    public AudioClip backgroundMusic;
+    public AudioClip clickSound;
+    public AudioClip throwSound;
+    public AudioClip captureSound;
+    public AudioClip shakeSound;
+    public AudioClip successSound;
+    public AudioClip missSound;
+    public AudioClip landSound;
+
     private int attemptsLeft;
+
     private bool isPlaying = false;
     private bool isThrowing = false;
     private bool isCaptured = false;
     private bool powerMoving = false;
+    private bool musicEnabled = true;
 
     private float powerTimer = 0f;
 
@@ -66,7 +83,7 @@ public class PokeballThrow : MonoBehaviour
 
     void Start()
     {
-        // 儲存寶可夢的原始狀態
+        // 保存寶可夢的原始狀態
         if (pokemon != null)
         {
             originalPokemonScale = pokemon.transform.localScale;
@@ -74,7 +91,7 @@ public class PokeballThrow : MonoBehaviour
             originalPokemonRotation = pokemon.transform.rotation;
         }
 
-        // 綁定按鈕
+        // 綁定 UI 按鈕
         if (startButton != null)
             startButton.onClick.AddListener(StartGame);
 
@@ -87,7 +104,10 @@ public class PokeballThrow : MonoBehaviour
         if (homeButton != null)
             homeButton.onClick.AddListener(BackToHome);
 
-        // 設定 Slider
+        if (musicButton != null)
+            musicButton.onClick.AddListener(ToggleMusic);
+
+        // 設定力道條
         if (powerSlider != null)
         {
             powerSlider.minValue = 0f;
@@ -97,13 +117,36 @@ public class PokeballThrow : MonoBehaviour
             powerSlider.value = 0f;
         }
 
+        // 設定背景音樂
+        if (bgmSource != null)
+        {
+            bgmSource.playOnAwake = false;
+            bgmSource.loop = true;
+
+            if (backgroundMusic != null)
+                bgmSource.clip = backgroundMusic;
+
+            bgmSource.mute = !musicEnabled;
+
+            if (bgmSource.clip != null)
+                bgmSource.Play();
+        }
+
+        // 音效不需要循環
+        if (sfxSource != null)
+        {
+            sfxSource.playOnAwake = false;
+            sfxSource.loop = false;
+        }
+
         ResetGame();
         ShowPanels(true, false, false);
+        UpdateMusicButton();
     }
 
     void Update()
     {
-        // 力道指標來回移動
+        // 力道指標左右移動
         if (powerMoving && isPlaying && !isThrowing)
         {
             powerTimer += Time.deltaTime;
@@ -117,14 +160,54 @@ public class PokeballThrow : MonoBehaviour
             }
         }
 
-        // 電腦版保留 Space
+        // 電腦版保留 Space 測試
         if (Input.GetKeyDown(KeyCode.Space))
         {
             ThrowPokeball();
         }
     }
 
-    // 控制三種遊戲介面
+    // 播放短音效
+    void PlaySound(AudioClip clip)
+    {
+        if (sfxSource != null && clip != null)
+        {
+            sfxSource.PlayOneShot(clip);
+        }
+    }
+
+    // 開關背景音樂
+    public void ToggleMusic()
+    {
+        musicEnabled = !musicEnabled;
+
+        if (bgmSource != null)
+        {
+            bgmSource.mute = !musicEnabled;
+        }
+
+        UpdateMusicButton();
+        PlaySound(clickSound);
+    }
+
+    // 更新音樂按鈕文字
+    void UpdateMusicButton()
+    {
+        if (musicButton == null)
+            return;
+
+        TMP_Text buttonText =
+            musicButton.GetComponentInChildren<TMP_Text>();
+
+        if (buttonText != null)
+        {
+            buttonText.text = musicEnabled
+                ? "關閉音樂"
+                : "開啟音樂";
+        }
+    }
+
+    // 控制三個畫面
     void ShowPanels(bool start, bool game, bool result)
     {
         if (startPanel != null)
@@ -137,6 +220,7 @@ public class PokeballThrow : MonoBehaviour
             resultPanel.SetActive(result);
     }
 
+    // 更新剩餘機會
     void UpdateAttempts()
     {
         if (attemptsText != null)
@@ -147,7 +231,7 @@ public class PokeballThrow : MonoBehaviour
         }
     }
 
-    // 重置遊戲狀態
+    // 重置整場遊戲
     void ResetGame()
     {
         StopAllCoroutines();
@@ -197,9 +281,11 @@ public class PokeballThrow : MonoBehaviour
         UpdateAttempts();
     }
 
-    // 開始遊戲
+    // 點擊開始遊戲
     public void StartGame()
     {
+        PlaySound(clickSound);
+
         ResetGame();
 
         isPlaying = true;
@@ -231,14 +317,12 @@ public class PokeballThrow : MonoBehaviour
             return;
         }
 
-        // 停止力道條
         powerMoving = false;
         isThrowing = true;
 
         if (throwButton != null)
             throwButton.interactable = false;
 
-        // 讀取玩家按下當下的力道
         float power = powerSlider.value;
 
         attemptsLeft--;
@@ -253,37 +337,35 @@ public class PokeballThrow : MonoBehaviour
         StartCoroutine(ThrowSequence(power, perfect));
     }
 
-    // 控制人物揮手與拋球流程
+    // 投擲動作與精靈球飛行
     IEnumerator ThrowSequence(float power, bool perfect)
     {
-        // 先讓訓練家揮手
+        // 人物先揮手
         if (trainerAnimator != null)
-        {
             trainerAnimator.SetTrigger("Throw");
-        }
 
         yield return new WaitForSeconds(
             Mathf.Max(0f, releaseDelay)
         );
 
+        // 球離手時播放音效
+        PlaySound(throwSound);
+
         Vector3 start = throwPoint.position;
         Vector3 target = capturePoint.position;
 
-        // 根據力道決定精靈球的終點
+        // 根據力道決定終點
         if (!perfect)
         {
             Vector3 direction = target - start;
 
             if (power < perfectMin)
             {
-                // 力道不足：球飛不到寶可夢
                 target = start + direction * 0.55f;
-
                 Debug.Log("力道不足！");
             }
             else
             {
-                // 力道過強：球飛過寶可夢上方
                 target = start + direction * 1.4f;
                 target.y += 3f;
 
@@ -303,7 +385,7 @@ public class PokeballThrow : MonoBehaviour
 
         float elapsed = 0f;
 
-        // 精靈球拋物線飛行
+        // 精靈球拋物線
         while (elapsed < throwDuration)
         {
             elapsed += Time.deltaTime;
@@ -331,7 +413,6 @@ public class PokeballThrow : MonoBehaviour
 
         currentBall.transform.position = target;
 
-        // 判斷投擲結果
         if (perfect)
         {
             yield return StartCoroutine(
@@ -346,7 +427,7 @@ public class PokeballThrow : MonoBehaviour
         }
     }
 
-    // 播放紫色粒子特效
+    // 播放紫色粒子
     void PlayCaptureEffect(Vector3 position)
     {
         if (captureEffectPrefab == null)
@@ -367,17 +448,19 @@ public class PokeballThrow : MonoBehaviour
         Destroy(effect, 3f);
     }
 
-    // 收服成功
+    // 收服成功動畫
     IEnumerator CaptureSuccess(Vector3 position)
     {
+        // 命中聲與紫色粒子
+        PlaySound(captureSound);
         PlayCaptureEffect(position);
 
-        // 寶可夢逐漸縮小
         Vector3 startScale =
             pokemon.transform.localScale;
 
         float elapsed = 0f;
 
+        // 寶可夢縮小
         while (elapsed < captureDuration)
         {
             elapsed += Time.deltaTime;
@@ -398,7 +481,7 @@ public class PokeballThrow : MonoBehaviour
 
         pokemon.SetActive(false);
 
-        // 計算精靈球落地位置
+        // 取得地面高度
         Vector3 landingPoint =
             currentBall.transform.position;
 
@@ -460,12 +543,17 @@ public class PokeballThrow : MonoBehaviour
 
         currentBall.transform.position = landingPoint;
 
+        // 落地音效（沒有素材也可以留空）
+        PlaySound(landSound);
+
         // 精靈球搖晃三次
         Quaternion originalRotation =
             currentBall.transform.rotation;
 
         for (int i = 0; i < 3; i++)
         {
+            PlaySound(shakeSound);
+
             elapsed = 0f;
 
             while (elapsed < shakeDuration)
@@ -492,7 +580,9 @@ public class PokeballThrow : MonoBehaviour
             yield return new WaitForSeconds(0.2f);
         }
 
-        // 收服成功特效
+        // 最後的成功音效與粒子
+        PlaySound(successSound);
+
         PlayCaptureEffect(
             currentBall.transform.position
         );
@@ -514,7 +604,8 @@ public class PokeballThrow : MonoBehaviour
     // 投擲失敗
     IEnumerator CaptureMiss()
     {
-        // 讓玩家看清楚球飛錯的位置
+        PlaySound(missSound);
+
         yield return new WaitForSeconds(0.6f);
 
         if (currentBall != null)
@@ -525,9 +616,9 @@ public class PokeballThrow : MonoBehaviour
 
         isThrowing = false;
 
-        // 還有剩餘機會
         if (attemptsLeft > 0)
         {
+            // 還有一次機會
             powerTimer = 0f;
             powerMoving = true;
 
@@ -538,12 +629,11 @@ public class PokeballThrow : MonoBehaviour
                 throwButton.interactable = true;
 
             Debug.Log(
-                "投擲失敗！還有 " + attemptsLeft + " 次機會"
+                "投擲失敗！剩餘 " + attemptsLeft + " 次機會"
             );
         }
         else
         {
-            // 兩次機會都用完
             isPlaying = false;
             powerMoving = false;
 
@@ -562,12 +652,24 @@ public class PokeballThrow : MonoBehaviour
     // 再玩一次
     public void RetryGame()
     {
-        StartGame();
+        PlaySound(clickSound);
+        StartGameWithoutClick();
+    }
+
+    void StartGameWithoutClick()
+    {
+        ResetGame();
+
+        isPlaying = true;
+        powerMoving = true;
+
+        ShowPanels(false, true, false);
     }
 
     // 返回首頁
     public void BackToHome()
     {
+        PlaySound(clickSound);
         ResetGame();
         ShowPanels(true, false, false);
     }
