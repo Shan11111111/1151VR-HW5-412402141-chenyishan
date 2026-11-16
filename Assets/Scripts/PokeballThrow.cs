@@ -4,16 +4,24 @@ using UnityEngine;
 
 public class PokeballThrow : MonoBehaviour
 {
+    [Header("遊戲物件")]
     public GameObject pokeballPrefab;
     public GameObject pokemon;
     public Transform throwPoint;
     public Transform capturePoint;
 
-    // 收服特效
+    [Header("收服特效")]
     public GameObject captureEffectPrefab;
 
+    [Header("訓練家動畫")]
+    public Animator trainerAnimator;
+    public float releaseDelay = 0.4f;
+
+    [Header("精靈球飛行設定")]
     public float throwDuration = 1.5f;
     public float arcHeight = 2f;
+
+    [Header("收服動畫設定")]
     public float captureDuration = 0.6f;
 
     private bool isThrowing = false;
@@ -21,16 +29,52 @@ public class PokeballThrow : MonoBehaviour
 
     void Update()
     {
+        // 按下 Space，開始人物投擲動畫
         if (Input.GetKeyDown(KeyCode.Space) &&
-            !isThrowing && !isCaptured)
+            !isThrowing &&
+            !isCaptured)
         {
-            StartCoroutine(ThrowBall());
+            StartCoroutine(PlayThrowAnimation());
         }
     }
 
+    // 第一階段：播放人物揮手動畫
+    IEnumerator PlayThrowAnimation()
+    {
+        // 防止重複拋球
+        isThrowing = true;
+
+        // 播放 hammerUse 投擲動畫
+        if (trainerAnimator != null)
+        {
+            trainerAnimator.SetTrigger("Throw");
+        }
+        else
+        {
+            Debug.LogWarning("尚未指定 Trainer Animator！");
+        }
+
+        // 等待人物揮手到出手位置
+        yield return new WaitForSeconds(
+            Mathf.Max(0f, releaseDelay)
+        );
+
+        // 精靈球正式飛出
+        yield return StartCoroutine(ThrowBall());
+    }
+
+    // 第二階段：精靈球沿拋物線飛行
     IEnumerator ThrowBall()
     {
-        isThrowing = true;
+        if (pokeballPrefab == null ||
+            pokemon == null ||
+            throwPoint == null ||
+            capturePoint == null)
+        {
+            Debug.LogError("精靈球或寶可夢參照尚未設定！");
+            isThrowing = false;
+            yield break;
+        }
 
         GameObject ball = Instantiate(
             pokeballPrefab,
@@ -43,19 +87,28 @@ public class PokeballThrow : MonoBehaviour
 
         float elapsed = 0f;
 
-        // 第一階段：精靈球拋物線飛行
         while (elapsed < throwDuration)
         {
             elapsed += Time.deltaTime;
 
-            float t = Mathf.Clamp01(elapsed / throwDuration);
+            float t = Mathf.Clamp01(
+                elapsed / Mathf.Max(0.01f, throwDuration)
+            );
 
-            Vector3 position = Vector3.Lerp(start, end, t);
+            // 計算精靈球飛行位置
+            Vector3 position = Vector3.Lerp(
+                start,
+                end,
+                t
+            );
 
-            position.y += 4f * arcHeight * t * (1f - t);
+            // 增加拋物線高度
+            position.y +=
+                4f * arcHeight * t * (1f - t);
 
             ball.transform.position = position;
 
+            // 精靈球在空中旋轉
             ball.transform.Rotate(
                 Vector3.right,
                 360f * Time.deltaTime,
@@ -67,7 +120,7 @@ public class PokeballThrow : MonoBehaviour
 
         ball.transform.position = end;
 
-        // 第二階段：播放紫色收服粒子
+        // 第三階段：播放紫色收服特效
         if (captureEffectPrefab != null)
         {
             GameObject effect = Instantiate(
@@ -87,8 +140,9 @@ public class PokeballThrow : MonoBehaviour
             Destroy(effect, 3f);
         }
 
-        // 第三階段：蝙蝠逐漸縮小
-        Vector3 originalScale = pokemon.transform.localScale;
+        // 第四階段：蝙蝠逐漸縮小
+        Vector3 originalScale =
+            pokemon.transform.localScale;
 
         elapsed = 0f;
 
@@ -97,7 +151,7 @@ public class PokeballThrow : MonoBehaviour
             elapsed += Time.deltaTime;
 
             float t = Mathf.Clamp01(
-                elapsed / captureDuration
+                elapsed / Mathf.Max(0.01f, captureDuration)
             );
 
             pokemon.transform.localScale =
@@ -112,7 +166,7 @@ public class PokeballThrow : MonoBehaviour
 
         pokemon.SetActive(false);
 
-        // 暫時保留精靈球半秒
+        // 精靈球暫時停留半秒
         yield return new WaitForSeconds(0.5f);
 
         Destroy(ball);
